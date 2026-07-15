@@ -33,12 +33,23 @@ class VectorInterface():
             if file_path.is_file():
                 with open(file_path, "r", encoding="utf-8") as file:
                     chunks = self._chunk_doc(file.read(), split_type)
-                    docs_chunks.append(chunks)
-                    for i, _ in enumerate(chunks):
+                    for i, chunk in enumerate(chunks):
+                        docs_chunks.append(chunk)
                         chunk_ids.append(str(file_path.name) + str(i))
 
         return (docs_chunks, chunk_ids)
 
     def add_docs(self, dirname):
+        # Perform document chunking
         (chunks, ids) = self._chunk_docs(dirname, Splitter.RECURSIVE)
-        return (chunks, ids)
+
+        # Instantiate Chroma and add chunks to it
+        client = chromadb.Client()
+        collection = client.get_or_create_collection(name="user-docs-collection")
+        collection.add(
+            ids=ids,
+            documents=chunks
+        )
+
+        # Return collection (temporary until persistence is added)
+        return collection
