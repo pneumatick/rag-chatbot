@@ -1,3 +1,4 @@
 flask
-chroma
+chromadb
 langchain-text-splitters
+openai
