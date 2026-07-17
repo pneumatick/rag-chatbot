@@ -1,6 +1,6 @@
 from flask import Flask
 
-from chunking import Splitter, VectorInterface
+from chunking import VectorInterface
 
 server = Flask(__name__)
 
