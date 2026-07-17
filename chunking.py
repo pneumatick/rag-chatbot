@@ -2,6 +2,12 @@ from enum import Enum, auto, unique
 from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from chromadb import HttpClient as ChromadbHttpClient
+from openai import OpenAI
+
+lm_studio_client = OpenAI(
+    base_url="http://host.docker.internal:1234/v1",
+    api_key="lm-studio"  # required by the client, but LM Studio ignores it"
+)
 
 @unique
 class Splitter(Enum):
@@ -58,10 +64,49 @@ class VectorInterface():
             documents=chunks
         )
     
-    def retrieve(self, query, k=5):
+    def _retrieve(self, query, k=5):
         results = self.collection.query(
             query_texts=[query],
             n_results=k
         )
 
         return results["documents"][0]  # list of chunk texts
+    
+    def query(self, user_query):
+        # Get results from querying the chunked data in chromadb
+        results = self._retrieve(user_query)
+
+        # Flatten the results into a single context block
+        context = "\n---\n".join(results)
+
+        # Synthesis prompt for the LLM
+        system_prompt = (
+            "You are an insightful research assistant analyzing the user's personal writings. "
+            "Your goal is to synthesize the provided context and find deep, non-obvious connections "
+            "between the concepts requested. Do not invent facts; rely strictly on the text provided."
+        )
+
+        user_prompt = f"""
+            Based on the following excerpts from my writings, answer this question: 
+            "{user_query}"
+
+            ---
+            WRITING EXCERPTS:
+            {context}
+            ---
+
+            Provide a structured analysis highlighting the primary intersections, tensions, or patterns you see.
+         """
+        
+        # Prompt the LLM
+        response = lm_studio_client.chat.completions.create(
+            model="local-model", # LM Studio ignores this if only one model is loaded, but pass it anyway
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            #stream=True
+        )
+
+        return response
