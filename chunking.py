@@ -2,12 +2,23 @@ from enum import Enum, auto, unique
 from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import chromadb
+from chromadb import HttpClient as ChromadbHttpClient
 
 @unique
 class Splitter(Enum):
     RECURSIVE = auto()
 
 class VectorInterface():
+    def __init__(self, client=None):
+        self.client = client if client else self._init_client()
+        self.collection = self._get_collection("user-docs-collection")
+    
+    def _init_client(self):
+        return ChromadbHttpClient(host="localhost", port=8000)
+
+    def _get_collection(self, name):
+        return self.client.get_or_create_collection(name=name)
+
     def _get_splitter(self, type):
         if type == Splitter.RECURSIVE:
             return RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=0)
@@ -43,13 +54,15 @@ class VectorInterface():
         # Perform document chunking
         (chunks, ids) = self._chunk_docs(dirname, Splitter.RECURSIVE)
 
-        # Instantiate Chroma and add chunks to it
-        client = chromadb.Client()
-        collection = client.get_or_create_collection(name="user-docs-collection")
-        collection.add(
+        self.collection.add(
             ids=ids,
             documents=chunks
         )
+    
+    def retrieve(self, query, k=5):
+        results = self.collection.query(
+            query_texts=[query],
+            n_results=k
+        )
 
-        # Return collection (temporary until persistence is added)
-        return collection
+        return results["documents"][0]  # list of chunk texts
