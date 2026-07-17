@@ -1,7 +1,6 @@
 from enum import Enum, auto, unique
 from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-import chromadb
 from chromadb import HttpClient as ChromadbHttpClient
 
 @unique
