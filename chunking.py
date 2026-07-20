@@ -1,5 +1,6 @@
 from enum import Enum, auto, unique
 from pathlib import Path
+import json
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from chromadb import HttpClient as ChromadbHttpClient
 from openai import OpenAI
@@ -151,7 +152,7 @@ class VectorInterface():
         )
 
         def generate():
-            yield "data: {\"event\": \"started\", \"message\": \"Analyzing your writings...\"}\n\n"
+            yield f"data: {{\"event\": \"started\", \"message\": \"Analyzing your writings...\", \"sources\": {json.dumps(results)}}}\n\n"
             
             for chunk in response:
                 print(chunk)

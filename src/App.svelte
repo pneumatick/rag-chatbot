@@ -33,7 +33,7 @@
     if (!q || loading) return;
 
     const id = crypto.randomUUID();
-    entries = [...entries, { id, query: q, answer: "", sources: [], error: null, streaming: true }];
+    entries = [...entries, { id, query: q, reasoning: "", answer: "", sources: [], error: null, streaming: true }];
     queryText = "";
     loading = true;
     await scrollToBottom();
@@ -54,7 +54,7 @@
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error || `HTTP ${res.status}: ${res.statusText}`);
       }
-      console.log("Response received...")
+      console.log("Response received: ", res)
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder("utf-8");
@@ -80,8 +80,12 @@
 
               console.log(event)
               switch (event.event) {
+                case "started":
+                  entries[entries.length -1].sources = event.sources || []
+                  await scrollToBottom();
+                  break;
                 case "reasoning":
-                  entries[entries.length - 1].answer += event.message;
+                  entries[entries.length - 1].reasoning += event.message;
                   await scrollToBottom();
                   break;
                 case "chunk":
@@ -95,7 +99,8 @@
                   break;
               }
             } catch {
-              // Ignore parse errors for malformed SSE lines
+              // Capture Parse errors for malformed SSE lines
+              console.error("Could not parse the following: ", line.slice(5).trim());
             }
           }
         }
@@ -195,11 +200,10 @@
 
         {#if entry.error}
           <p class="errata">Errata — {entry.error}</p>
-        {:else if entry.answer === null}
-          <p class="thinking"><span>reading through the archive</span><span class="ellipsis" /></p>
-        {:else}
+        {:else if entry.answer != []}
           <div class="answer">{entry.answer}</div>
-
+        {:else}
+          <p class="thinking"><span>reading through the archive</span><span class="ellipsis" /></p>
           {#if entry.sources.length > 0}
             <div class="sources">
               <p class="sources-label">excerpts consulted</p>
@@ -213,6 +217,7 @@
               </div>
             </div>
           {/if}
+          <div class="answer">{entry.reasoning}</div>
         {/if}
       </section>
     {/each}
