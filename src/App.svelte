@@ -2,8 +2,9 @@
   import { onMount, tick } from "svelte";
 
   let queryText = "";
-  let entries = []; // { id, query, answer, sources, error }
+  let entries = []; // { id, query, answer, sources, error, streaming: boolean }
   let loading = false;
+  let controllerRef = null;
   let health = "checking"; // checking | online | offline
   let scrollEl;
 
@@ -32,32 +33,87 @@
     if (!q || loading) return;
 
     const id = crypto.randomUUID();
-    entries = [...entries, { id, query: q, answer: null, sources: [], error: null }];
+    entries = [...entries, { id, query: q, reasoning: "", answer: "", sources: [], error: null, streaming: true }];
     queryText = "";
     loading = true;
     await scrollToBottom();
 
+    controllerRef = new AbortController();
+
     try {
-      const res = await fetch("/api/query", {
+      console.log("Sending POST...")
+      const res = await fetch("/api/query/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q })
+        body: JSON.stringify({ query: q }),
+        signal: controllerRef.signal,
+        duplex: "half"
       });
-      const data = await res.json();
 
-      entries = entries.map((e) =>
-        e.id === id
-          ? res.ok
-            ? { ...e, answer: data.answer, sources: data.sources || [] }
-            : { ...e, error: data.error || "Something went wrong reaching the archive." }
-          : e
-      );
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTP ${res.status}: ${res.statusText}`);
+      }
+      console.log("Response received: ", res)
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        while (true) {
+          const newlineIndex = buffer.indexOf("\n\n");
+          if (newlineIndex === -1) break;
+
+          const line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 2);
+
+          console.log(line.trim())
+          if (line.trim().startsWith("data:")) {
+            try {
+              const event = JSON.parse(line.slice(5).trim());
+
+              console.log(event)
+              switch (event.event) {
+                case "started":
+                  entries[entries.length -1].sources = event.sources || []
+                  await scrollToBottom();
+                  break;
+                case "reasoning":
+                  entries[entries.length - 1].reasoning += event.message;
+                  await scrollToBottom();
+                  break;
+                case "chunk":
+                  entries[entries.length - 1].answer += event.message;
+                  await scrollToBottom();
+                  break;
+                case "completed":
+                  loading = false;
+                  controllerRef = null;
+                  await scrollToBottom();
+                  break;
+              }
+            } catch {
+              // Capture Parse errors for malformed SSE lines
+              console.error("Could not parse the following: ", line.slice(5).trim());
+            }
+          }
+        }
+      }
+
     } catch (err) {
-      entries = entries.map((e) =>
-        e.id === id ? { ...e, error: "Couldn't reach the backend. Is it running?" } : e
-      );
+      if (err.name !== "AbortError") {
+        const errorMessage = err.message || "Something went wrong.";
+        entries = entries.map((e) =>
+          e.id === id ? { ...e, error: errorMessage } : e
+        );
+      }
     } finally {
-      loading = false;
       await scrollToBottom();
     }
   }
@@ -144,11 +200,10 @@
 
         {#if entry.error}
           <p class="errata">Errata — {entry.error}</p>
-        {:else if entry.answer === null}
-          <p class="thinking"><span>reading through the archive</span><span class="ellipsis" /></p>
-        {:else}
+        {:else if entry.answer != []}
           <div class="answer">{entry.answer}</div>
-
+        {:else}
+          <p class="thinking"><span>reading through the archive</span><span class="ellipsis" /></p>
           {#if entry.sources.length > 0}
             <div class="sources">
               <p class="sources-label">excerpts consulted</p>
@@ -162,6 +217,7 @@
               </div>
             </div>
           {/if}
+          <div class="answer">{entry.reasoning}</div>
         {/if}
       </section>
     {/each}
@@ -175,7 +231,7 @@
       on:keydown={handleKeydown}
       disabled={loading}
     />
-    <button class="ask-btn" on:click={submitQuery} disabled={loading || !queryText.trim()}>
+      <button class="ask-btn" on:click={submitQuery} disabled={loading || (controllerRef && loading)}>
       ask
     </button>
   </footer>
@@ -394,6 +450,19 @@
     line-height: 1.7;
     color: var(--chalk);
     white-space: pre-wrap;
+  }
+
+  .entry.streaming .thinking {
+    display: none;
+  }
+
+  .entry.streaming .answer {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
   .sources {
