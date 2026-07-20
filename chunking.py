@@ -121,7 +121,7 @@ class VectorInterface():
 
     def query_stream(self, user_query):
         """Stream response chunks from the LLM as Server-Sent Events."""
-        results = self._retrieve(user_query)
+        results = self._retrieve(user_query, k=10)
         
         system_prompt = (
             "You are an insightful research assistant analyzing the user's personal writings. "
@@ -155,12 +155,11 @@ class VectorInterface():
             yield f"data: {{\"event\": \"started\", \"message\": \"Analyzing your writings...\", \"sources\": {json.dumps(results)}}}\n\n"
             
             for chunk in response:
-                print(chunk)
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    content = chunk.choices[0].delta.content
+                    content = chunk.choices[0].delta.content.replace('"', '\\"').replace("\n", "\\n")
                     yield f"data: {{\"event\": \"chunk\", \"message\": \"{content}\"}}\n\n"
                 elif chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.reasoning_content:
-                    reasoning_content = chunk.choices[0].delta.reasoning_content
+                    reasoning_content = chunk.choices[0].delta.reasoning_content.replace('"', '\\"').replace("\n", "\\n")
                     yield f"data: {{\"event\": \"reasoning\", \"message\": \"{reasoning_content}\"}}\n\n"
             
             yield "data: {\"event\": \"completed\", \"message\": \"Analysis complete.\"}\n\n"
