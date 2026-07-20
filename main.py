@@ -1,7 +1,7 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
-from chunking import VectorInterface
+from chunking import VectorInterface, sse_response
 
 server = Flask(__name__)
 # Allow the Svelte dev server (default Vite port) to call this API.
@@ -9,6 +9,7 @@ server = Flask(__name__)
 CORS(server, resources={r"/api/*": {"origins": "*"}})
 
 vec = VectorInterface()
+
 
 @server.route("/api/health")
 def health():
@@ -29,6 +30,18 @@ def query():
         "answer": result["answer"],
         "sources": result["sources"],
     })
+
+
+@server.route("/api/query/stream", methods=["POST"])
+def query_stream():
+    body = request.get_json(silent=True) or {}
+    user_query = (body.get("query") or "").strip()
+
+    if not user_query:
+        return jsonify({"error": "Missing 'query' in request body"}), 400
+
+    # Create a streaming response using SSE format
+    return sse_response(vec.query_stream(user_query))
 
 
 @server.route("/api/add_docs", methods=["POST"])
