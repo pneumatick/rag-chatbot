@@ -1,4 +1,5 @@
 flask
-chromadb
+flask-cors
 langchain-text-splitters
+chromadb
 openai

@@ -1,0 +1,49 @@
+:root {
+  --ink: #12141c;
+  --ink-raised: #1a1d28;
+  --paper: #f3ecdc;
+  --paper-dim: #e7ddc6;
+  --brass: #b8863d;
+  --rust: #b4482f;
+  --moss: #6f8a6c;
+  --chalk: #ece7d8;
+  --chalk-dim: #a9a79c;
+
+  --font-display: "Fraunces", "Iowan Old Style", serif;
+  --font-body: "Inter", -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--ink);
+  color: var(--chalk);
+  font-family: var(--font-body);
+}
+
+#app {
+  min-height: 100vh;
+}
+
+button {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--brass);
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -17,7 +17,7 @@ class VectorInterface():
     def __init__(self, client=None):
         self.client = client if client else self._init_client()
         self.collection = self._get_collection("user-docs-collection")
-    
+
     def _init_client(self):
         return ChromadbHttpClient(host="localhost", port=8000)
 
@@ -36,7 +36,7 @@ class VectorInterface():
         # NOTE: Handle error properly
         if not splitter:
             return "Unknown splitter selected"
-        
+
         chunks = splitter.split_text(document)
 
         return chunks
@@ -63,7 +63,9 @@ class VectorInterface():
             ids=ids,
             documents=chunks
         )
-    
+
+        return len(chunks)
+
     def _retrieve(self, query, k=5):
         results = self.collection.query(
             query_texts=[query],
@@ -71,7 +73,7 @@ class VectorInterface():
         )
 
         return results["documents"][0]  # list of chunk texts
-    
+
     def query(self, user_query):
         # Get results from querying the chunked data in chromadb
         results = self._retrieve(user_query)
@@ -87,7 +89,7 @@ class VectorInterface():
         )
 
         user_prompt = f"""
-            Based on the following excerpts from my writings, answer this question: 
+            Based on the following excerpts from my writings, answer this question:
             "{user_query}"
 
             ---
@@ -97,7 +99,7 @@ class VectorInterface():
 
             Provide a structured analysis highlighting the primary intersections, tensions, or patterns you see.
          """
-        
+
         # Prompt the LLM
         response = lm_studio_client.chat.completions.create(
             model="local-model", # LM Studio ignores this if only one model is loaded, but pass it anyway
@@ -109,4 +111,7 @@ class VectorInterface():
             #stream=True
         )
 
-        return response
+        return {
+            "answer": response.choices[0].message.content,
+            "sources": results,
+        }
