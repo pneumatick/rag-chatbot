@@ -1,18 +1,21 @@
 <script>
   import { onMount, tick } from "svelte";
+  import SvelteMarkdown from "@humanspeak/svelte-markdown";
 
-  let queryText = "";
-  let entries = []; // { id, query, answer, sources, error, streaming: boolean }
-  let loading = false;
-  let controllerRef = null;
-  let health = "checking"; // checking | online | offline
-  let scrollEl;
+  let queryText = $state("");
+  let entries = $state([]); // { id, query, answer, sources, error, streaming: boolean }
+  let loading = $state(false);
+  let controllerRef = $state(null);
+  let health = $state("checking"); // checking | online | offline
+  let scrollEl = $state();
 
-  let showIndexPanel = false;
-  let dirname = "user-docs";
-  let indexLoading = false;
-  let indexMessage = "";
-  let indexIsError = false;
+  let showIndexPanel = $state(false);
+  let dirname = $state("user-docs");
+  let indexLoading = $state(false);
+  let indexMessage = $state("");
+  let indexIsError = $state(false);
+  // For handling Markdown streams
+  let markdown = $state("");
 
   onMount(async () => {
     try {
@@ -64,6 +67,7 @@
         const { done, value } = await reader.read();
         if (done) break;
 
+
         buffer += decoder.decode(value, { stream: true });
 
         while (true) {
@@ -85,7 +89,8 @@
                   await scrollToBottom();
                   break;
                 case "reasoning":
-                  entries[entries.length - 1].reasoning += event.message;
+                  //entries[entries.length - 1].reasoning += event.message;
+                  markdown += event.message;
                   await scrollToBottom();
                   break;
                 case "chunk":
@@ -98,8 +103,9 @@
                   await scrollToBottom();
                   break;
               }
-            } catch {
+            } catch (e) {
               // Capture Parse errors for malformed SSE lines
+              console.error(e)
               console.error("Could not parse the following: ", line.slice(5).trim());
             }
           }
@@ -162,10 +168,10 @@
     </div>
     <div class="header-actions">
       <button class="status" class:online={health === "online"} class:offline={health === "offline"} title="Backend status">
-        <span class="dot" />
+        <span class="dot"></span>
         {health === "checking" ? "connecting" : health}
       </button>
-      <button class="ghost-btn" on:click={() => (showIndexPanel = !showIndexPanel)}>
+      <button class="ghost-btn" onclick={() => (showIndexPanel = !showIndexPanel)}>
         {showIndexPanel ? "close" : "index writings"}
       </button>
     </div>
@@ -177,7 +183,7 @@
         <span>Folder to index</span>
         <input type="text" bind:value={dirname} placeholder="user-docs" />
       </label>
-      <button class="brass-btn" on:click={addDocs} disabled={indexLoading}>
+      <button class="brass-btn" onclick={addDocs} disabled={indexLoading}>
         {indexLoading ? "indexing…" : "add to archive"}
       </button>
       {#if indexMessage}
@@ -203,8 +209,9 @@
         {:else if entry.answer != []}
           <div class="answer">{entry.answer}</div>
         {:else}
-          <p class="thinking"><span>reading through the archive</span><span class="ellipsis" /></p>
+          <p class="thinking"><span>reading through the archive</span><span class="ellipsis"></span></p>
           {#if entry.sources.length > 0}
+            <SvelteMarkdown source={markdown} streaming={true} />
             <div class="sources">
               <p class="sources-label">excerpts consulted</p>
               <div class="card-row">
@@ -228,10 +235,10 @@
       rows="1"
       placeholder="What patterns emerge in…"
       bind:value={queryText}
-      on:keydown={handleKeydown}
+      onkeydown={handleKeydown}
       disabled={loading}
-    />
-      <button class="ask-btn" on:click={submitQuery} disabled={loading || (controllerRef && loading)}>
+></textarea>
+      <button class="ask-btn" onclick={submitQuery} disabled={loading || (controllerRef && loading)}>
       ask
     </button>
   </footer>

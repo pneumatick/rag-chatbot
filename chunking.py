@@ -156,10 +156,10 @@ class VectorInterface():
             
             for chunk in response:
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    content = chunk.choices[0].delta.content.replace('"', '\\"').replace("\n", "\\n")
+                    content = chunk.choices[0].delta.content.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
                     yield f"data: {{\"event\": \"chunk\", \"message\": \"{content}\"}}\n\n"
                 elif chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.reasoning_content:
-                    reasoning_content = chunk.choices[0].delta.reasoning_content.replace('"', '\\"').replace("\n", "\\n")
+                    reasoning_content = chunk.choices[0].delta.reasoning_content.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
                     yield f"data: {{\"event\": \"reasoning\", \"message\": \"{reasoning_content}\"}}\n\n"
             
             yield "data: {\"event\": \"completed\", \"message\": \"Analysis complete.\"}\n\n"
