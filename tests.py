@@ -3,7 +3,7 @@ from chunking import *
 eval_set = [
     {
         "question": "What have I written about creativity?",
-        "relevant_chunk_ids": [],
+        "relevant_chunk_ids": ["On Creativity.md1", "On Creativity.md8", "On Creativity.md3", "On Creativity.md5"],
         "type": "factual_recall"
     },
     {
@@ -18,13 +18,13 @@ def evaluate_retrieval(eval_set, retriever):
     negative_results = []
 
     for item in eval_set:
-        print(f"Evaluating question: {item["question"]}")
+        print(f"Evaluating question: {item["question"]}\nType: {item["type"]}")
         docs = retriever.invoke(item["question"])
-        print(docs)
+        print(f"\n{docs}\n")
         retrieved_ids = [doc.id for doc in docs]
 
         if item["type"] == "negative":
-            # threshold already filtered internally — empty list = correct abstention
+            # Threshold already filtered internally
             correctly_abstained = len(docs) == 0
             negative_results.append({
                 "question": item["question"],
@@ -55,5 +55,5 @@ def evaluate_retrieval(eval_set, retriever):
 if __name__ == "__main__":
     vec = VectorInterface()
     print("Interface instantiated...")
-
-    print(json.dumps(evaluate_retrieval(eval_set, vec.retriever), indent=4))
+    result_str = json.dumps(evaluate_retrieval(eval_set, vec.retriever), indent=4)
+    print(f"Final metrics:\n{result_str}")
