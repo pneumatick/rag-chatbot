@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from chromadb import HttpClient as ChromadbHttpClient
+from langchain_chroma import Chroma
 from openai import OpenAI
 from flask import Response
 
@@ -20,13 +21,23 @@ class Splitter(Enum):
 class VectorInterface():
     def __init__(self, client=None):
         self.client = client if client else self._init_client()
-        self.collection = self._get_collection("user-docs-collection")
+        self.collection = self._get_collection("user-docs-collection") # NOTE: Rename from collection to something describing VectorStore
+        self.retriever = self.collection.as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={"k": 5, "score_threshold": 0.2}
+        )
 
     def _init_client(self):
         return ChromadbHttpClient(host="localhost", port=8000)
 
     def _get_collection(self, name):
-        return self.client.get_or_create_collection(name=name)
+        #return self.client.get_or_create_collection(name=name)
+        return Chroma(
+            collection_name=name,
+            #embedding_fuction=CUSTOM_EMBEDDING_FUNC
+            host="localhost",
+            port=8000
+        )
 
     def _get_splitter(self, type):
         if type == Splitter.RECURSIVE:
@@ -63,24 +74,23 @@ class VectorInterface():
         # Perform document chunking
         (chunks, ids) = self._chunk_docs(dirname, Splitter.RECURSIVE)
 
-        self.collection.add(
-            ids=ids,
+        self.collection.add_texts(
+            ids=ids, # NOTE: Consider either changing ID method or using defaults
             documents=chunks
         )
 
         return len(chunks)
 
     def _retrieve(self, query, k=5):
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=k
+        results = self.retriever.invoke(
+            input=query
         )
 
-        return results["documents"][0]  # list of chunk texts
+        return results
 
     def query(self, user_query):
         # Get results from querying the chunked data in chromadb
-        results = self._retrieve(user_query)
+        results = self._retrieve(user_query)["documents"][0]  # list of chunk texts
 
         # Flatten the results into a single context block
         context = "\n---\n".join(results)
@@ -121,7 +131,7 @@ class VectorInterface():
 
     def query_stream(self, user_query):
         """Stream response chunks from the LLM as Server-Sent Events."""
-        results = self._retrieve(user_query, k=10)
+        results = self._retrieve(user_query, k=10)["documents"][0]  # list of chunk texts
         
         system_prompt = (
             "You are an insightful research assistant analyzing the user's personal writings. "
