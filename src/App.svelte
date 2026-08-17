@@ -89,8 +89,8 @@
                   await scrollToBottom();
                   break;
                 case "reasoning":
-                  //entries[entries.length - 1].reasoning += event.message;
-                  markdown += event.message;
+                  entries[entries.length - 1].reasoning += event.message;
+                  //markdown += event.message;
                   await scrollToBottom();
                   break;
                 case "chunk":
@@ -206,27 +206,26 @@
 
         {#if entry.error}
           <p class="errata">Errata — {entry.error}</p>
-        {:else if entry.answer != []}
-        <SvelteMarkdown source={markdown} streaming={true}/>
-          <SvelteMarkdown source={entry.answer} streaming={true} />
-          <!--<div class="answer">{entry.answer}</div>-->
         {:else}
           <p class="thinking"><span>reading through the archive</span><span class="ellipsis"></span></p>
-          {#if entry.sources.length > 0}
-            <SvelteMarkdown source={markdown} streaming={true} />
-            <div class="sources">
-              <p class="sources-label">excerpts consulted</p>
-              <div class="card-row">
-                {#each entry.sources as source, i}
-                  <article class="card" style="--tilt: {(i % 2 === 0 ? 1 : -1) * (1 + (i % 3))}deg">
-                    <span class="card-number">{i + 1}</span>
-                    <p class="card-text">{source}</p>
-                  </article>
-                {/each}
-              </div>
+        {/if}
+
+        <SvelteMarkdown source={entry.reasoning} streaming={true}/>
+        <div class="answer">
+          <SvelteMarkdown source={entry.answer} streaming={true} />
+        </div>
+        {#if entry.sources.length > 0}
+          <div class="sources">
+            <p class="sources-label">excerpts consulted</p>
+            <div class="card-row">
+              {#each entry.sources as source, i}
+                <article class="card" style="--tilt: {(i % 2 === 0 ? 1 : -1) * (1 + (i % 3))}deg">
+                  <span class="card-number">{i + 1}</span>
+                  <p class="card-text">{source}</p>
+                </article>
+              {/each}
             </div>
-          {/if}
-          <div class="answer">{entry.reasoning}</div>
+          </div>
         {/if}
       </section>
     {/each}
