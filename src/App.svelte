@@ -207,7 +207,9 @@
         {#if entry.error}
           <p class="errata">Errata — {entry.error}</p>
         {:else if entry.answer != []}
-          <div class="answer">{entry.answer}</div>
+        <SvelteMarkdown source={markdown} streaming={true}/>
+          <SvelteMarkdown source={entry.answer} streaming={true} />
+          <!--<div class="answer">{entry.answer}</div>-->
         {:else}
           <p class="thinking"><span>reading through the archive</span><span class="ellipsis"></span></p>
           {#if entry.sources.length > 0}

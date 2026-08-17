@@ -131,7 +131,12 @@ class VectorInterface():
 
     def query_stream(self, user_query):
         """Stream response chunks from the LLM as Server-Sent Events."""
-        results = self._retrieve(user_query, k=10)["documents"][0]  # list of chunk texts
+        #results = self._retrieve(user_query, k=10)["documents"][0]  # list of chunk texts
+        response = self._retrieve(user_query, k=10) # list of Document objects
+        # NOTE: Document objects have more information that may be needed in the future: review
+        results = []
+        for doc in response:
+            results.append(doc.page_content)
         
         system_prompt = (
             "You are an insightful research assistant analyzing the user's personal writings. "
