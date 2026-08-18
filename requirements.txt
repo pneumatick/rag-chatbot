@@ -4,3 +4,4 @@ langchain-text-splitters
 langchain-chroma
 chromadb
 openai
+langchain-openai

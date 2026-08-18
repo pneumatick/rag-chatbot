@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from chromadb import HttpClient as ChromadbHttpClient
+from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from openai import OpenAI
 from flask import Response
@@ -31,10 +32,17 @@ class VectorInterface():
         return ChromadbHttpClient(host="localhost", port=8000)
 
     def _get_collection(self, name):
-        #return self.client.get_or_create_collection(name=name)
+        # Register the LM Studio-hosted Qwen embedding model
+        lm_embed_func = OpenAIEmbeddings(
+            openai_api_key="lm-studio",    # LM Studio ignores this
+            model="qwen3-embedding",
+            openai_api_base="http://host.docker.internal:1234/v1",
+            check_embedding_ctx_length=False    # Prevents local tiktoken validation errors
+        )
+
         return Chroma(
             collection_name=name,
-            #embedding_fuction=CUSTOM_EMBEDDING_FUNC
+            embedding_function=lm_embed_func,
             host="localhost",
             port=8000
         )
@@ -76,7 +84,7 @@ class VectorInterface():
 
         self.collection.add_texts(
             ids=ids, # NOTE: Consider either changing ID method or using defaults
-            documents=chunks
+            texts=chunks
         )
 
         return len(chunks)
