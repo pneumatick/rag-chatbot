@@ -229,10 +229,10 @@
         
         <div class="thinking-section" onclick={() => toggleThinkingSection(entry)}>
           <span class="collapse-indicator">
-            { entry.collapsed === false ? "▼" : "" }
+            { entry.collapsed === false ? "▼" : "▶" }
           </span>
           {#if !entry.collapsed && !entry.error && entry.reasoning.length > 0}
-            <SvelteMarkdown source={entry.reasoning} streaming={true}/>
+            <SvelteMarkdown source={entry.reasoning} streaming={true} />
           {/if}
         </div>
         <div class="answer">
