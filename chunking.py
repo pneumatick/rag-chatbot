@@ -5,8 +5,11 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from chromadb import HttpClient as ChromadbHttpClient
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
+from langchain_classic.retrievers import ContextualCompressionRetriever
 from openai import OpenAI
 from flask import Response
+
+from reranker import LMStudioQwenReranker
 
 lm_studio_client = OpenAI(
     base_url="http://host.docker.internal:1234/v1",
@@ -27,13 +30,17 @@ class VectorInterface():
         # Set up retriever(s) for hybrid search
         sparse = self.collection.as_retriever(
             search_type="similarity_score_threshold",
-            search_kwargs={"k": 5, "score_threshold": 0.2}
+            search_kwargs={"k": 20, "score_threshold": 0.2}
         )
         # Implement BM25 dense retriever here. Needs pickle to avoid re-indexing
         #dense = ...
 
         # Use EnsembleRetreiver here to enable hybrid search
-        self.retriever = sparse
+        compressor = LMStudioQwenReranker(client=lm_studio_client, top_n=5)
+        self.retriever = ContextualCompressionRetriever(
+            base_compressor=compressor,
+            base_retriever=sparse   # Change to hybrid search retriever later
+        )
 
     def _init_client(self):
         return ChromadbHttpClient(host="localhost", port=8000)
@@ -149,7 +156,10 @@ class VectorInterface():
     def query_stream(self, user_query):
         """Stream response chunks from the LLM as Server-Sent Events."""
         #results = self._retrieve(user_query, k=10)["documents"][0]  # list of chunk texts
-        response = self._retrieve(user_query, k=10) # list of Document objects
+        # Retrieve relevant chunks, rerank results and reduce down to the top 5
+        response = self._retrieve(user_query) # list of Document objects
+
+        # Extract the page content from the Document objects in response
         # NOTE: Document objects have more information that may be needed in the future: review
         results = []
         for doc in response:
@@ -174,7 +184,7 @@ class VectorInterface():
          """
 
         response = lm_studio_client.chat.completions.create(
-            model="local-model",
+            model="qwen/qwen3.5-9b",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}

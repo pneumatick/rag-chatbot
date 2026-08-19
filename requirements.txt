@@ -5,3 +5,6 @@ langchain-chroma
 chromadb
 openai
 langchain-openai
+langchain
+langchain-community
+langchain-classic
