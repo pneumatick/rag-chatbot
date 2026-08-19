@@ -23,10 +23,17 @@ class VectorInterface():
     def __init__(self, client=None):
         self.client = client if client else self._init_client()
         self.collection = self._get_collection("user-docs-collection") # NOTE: Rename from collection to something describing VectorStore
-        self.retriever = self.collection.as_retriever(
+
+        # Set up retriever(s) for hybrid search
+        sparse = self.collection.as_retriever(
             search_type="similarity_score_threshold",
             search_kwargs={"k": 5, "score_threshold": 0.2}
         )
+        # Implement BM25 dense retriever here. Needs pickle to avoid re-indexing
+        #dense = ...
+
+        # Use EnsembleRetreiver here to enable hybrid search
+        self.retriever = sparse
 
     def _init_client(self):
         return ChromadbHttpClient(host="localhost", port=8000)
@@ -96,6 +103,7 @@ class VectorInterface():
 
         return results
 
+    '''
     def query(self, user_query):
         # Get results from querying the chunked data in chromadb
         results = self._retrieve(user_query)["documents"][0]  # list of chunk texts
@@ -136,6 +144,7 @@ class VectorInterface():
             "answer": response.choices[0].message.content,
             "sources": results,
         }
+    '''
 
     def query_stream(self, user_query):
         """Stream response chunks from the LLM as Server-Sent Events."""
