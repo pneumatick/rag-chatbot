@@ -162,8 +162,13 @@ class VectorInterface():
         # Extract the page content from the Document objects in response
         # NOTE: Document objects have more information that may be needed in the future: review
         results = []
+        sources = []
         for doc in response:
             results.append(doc.page_content)
+            sources.append({
+                "id": doc.id,
+                "text": doc.page_content
+            })
         
         system_prompt = (
             "You are an insightful research assistant analyzing the user's personal writings. "
@@ -194,7 +199,7 @@ class VectorInterface():
         )
 
         def generate():
-            yield f"data: {{\"event\": \"started\", \"message\": \"Analyzing your writings...\", \"sources\": {json.dumps(results)}}}\n\n"
+            yield f"data: {{\"event\": \"started\", \"message\": \"Analyzing your writings...\", \"sources\": {json.dumps(sources)}}}\n\n"
             
             try:
                 for chunk in response:
