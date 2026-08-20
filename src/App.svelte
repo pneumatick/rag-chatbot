@@ -3,7 +3,7 @@
   import SvelteMarkdown from "@humanspeak/svelte-markdown";
 
   let queryText = $state("");
-  let entries = $state([]); // { id, query, answer, sources, error, streaming: boolean }
+  let entries = $state([]); // { id, query, reasoning, answer, sources, error, streaming: boolean, collapsed: boolean }
   let loading = $state(false);
   let controllerRef = $state(null);
   let health = $state("checking"); // checking | online | offline
@@ -14,8 +14,6 @@
   let indexLoading = $state(false);
   let indexMessage = $state("");
   let indexIsError = $state(false);
-  // For handling Markdown streams
-  let markdown = $state("");
 
   onMount(async () => {
     try {
@@ -36,7 +34,7 @@
     if (!q || loading) return;
 
     const id = crypto.randomUUID();
-    entries = [...entries, { id, query: q, reasoning: "", answer: "", sources: [], error: null, streaming: true }];
+    entries = [...entries, { id, query: q, reasoning: "", answer: "", sources: [], error: null, streaming: true, collapsed: false }];
     queryText = "";
     loading = true;
     await scrollToBottom();
@@ -89,17 +87,19 @@
                   await scrollToBottom();
                   break;
                 case "reasoning":
-                  //entries[entries.length - 1].reasoning += event.message;
-                  markdown += event.message;
+                  entries[entries.length - 1].reasoning += event.message;
                   await scrollToBottom();
                   break;
                 case "chunk":
                   entries[entries.length - 1].answer += event.message;
                   await scrollToBottom();
+                  // Close thinking section once answer streaming starts
+                  entries[entries.length - 1].collapsed = true;
                   break;
                 case "completed":
                   loading = false;
                   controllerRef = null;
+                  entryAnswerStreaming = false;
                   await scrollToBottom();
                   break;
               }
@@ -128,6 +128,13 @@
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       submitQuery();
+    }
+  }
+
+  function toggleThinkingSection(entry) {
+    const index = entries.findIndex(e => e.id === entry.id);
+    if (index !== -1) {
+      entries[index].collapsed = !entries[index].collapsed;
     }
   }
 
@@ -204,27 +211,46 @@
       <section class="entry">
         <p class="entry-query">{entry.query}</p>
 
+        <!-- Status elements -->
         {#if entry.error}
           <p class="errata">Errata — {entry.error}</p>
+        {:else if entry.reasoning != []}
+          <p class="status">
+            <span>thinking</span>
+            <span class="ellipsis"></span>
+          </p>
         {:else if entry.answer != []}
-          <div class="answer">{entry.answer}</div>
         {:else}
-          <p class="thinking"><span>reading through the archive</span><span class="ellipsis"></span></p>
-          {#if entry.sources.length > 0}
-            <SvelteMarkdown source={markdown} streaming={true} />
-            <div class="sources">
-              <p class="sources-label">excerpts consulted</p>
-              <div class="card-row">
-                {#each entry.sources as source, i}
-                  <article class="card" style="--tilt: {(i % 2 === 0 ? 1 : -1) * (1 + (i % 3))}deg">
-                    <span class="card-number">{i + 1}</span>
-                    <p class="card-text">{source}</p>
-                  </article>
-                {/each}
-              </div>
-            </div>
+          <p class="status">
+            <span>reading through the archive</span>
+            <span class="ellipsis"></span>
+          </p>
+        {/if}
+        
+        <div class="thinking-section" onclick={() => toggleThinkingSection(entry)}>
+          <span class="collapse-indicator">
+            { entry.collapsed === false ? "▼" : "▶" }
+          </span>
+          {#if !entry.collapsed && !entry.error && entry.reasoning.length > 0}
+            <SvelteMarkdown source={entry.reasoning} streaming={true} />
           {/if}
-          <div class="answer">{entry.reasoning}</div>
+        </div>
+        <div class="answer">
+          <SvelteMarkdown source={entry.answer} streaming={true} />
+        </div>
+        {#if entry.sources.length > 0}
+          <div class="sources">
+            <p class="sources-label">excerpts consulted</p>
+            <div class="card-row">
+              {#each entry.sources as source, i}
+                <article class="card" style="--tilt: {(i % 2 === 0 ? 1 : -1) * (1 + (i % 3))}deg">
+                  <span class="card-number">{i + 1}</span>
+                  <p class="card-text">{source.file}</p>
+                  <p class="card-text">{source.text}</p>
+                </article>
+              {/each}
+            </div>
+          </div>
         {/if}
       </section>
     {/each}
@@ -433,7 +459,7 @@
     content: "› ";
   }
 
-  .thinking {
+  .status {
     color: var(--chalk-dim);
     font-style: italic;
     font-family: var(--font-display);
@@ -449,6 +475,31 @@
     25% { content: "."; }
     50% { content: ".."; }
     75% { content: "..."; }
+  }
+
+  .thinking-section {
+    cursor: pointer;
+    user-select: none;
+    padding: 0.25rem 0;
+    transition: max-height 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
+    overflow: hidden;
+  }
+
+  .thinking-section:hover {
+    background-color: rgba(0,0,0,0.02);
+  }
+
+  .thinking-section.collapsed {
+    max-height: 0 !important;
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  .collapse-indicator {
+    display: inline-block;
+    color: var(--brass);
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
   }
 
   .answer {

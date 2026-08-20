@@ -3,9 +3,13 @@ from pathlib import Path
 import json
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from chromadb import HttpClient as ChromadbHttpClient
+from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
+from langchain_classic.retrievers import ContextualCompressionRetriever
 from openai import OpenAI
 from flask import Response
+
+from reranker import LMStudioQwenReranker
 
 lm_studio_client = OpenAI(
     base_url="http://host.docker.internal:1234/v1",
@@ -22,26 +26,44 @@ class VectorInterface():
     def __init__(self, client=None):
         self.client = client if client else self._init_client()
         self.collection = self._get_collection("user-docs-collection") # NOTE: Rename from collection to something describing VectorStore
-        self.retriever = self.collection.as_retriever(
+
+        # Set up retriever(s) for hybrid search
+        sparse = self.collection.as_retriever(
             search_type="similarity_score_threshold",
-            search_kwargs={"k": 5, "score_threshold": 0.2}
+            search_kwargs={"k": 20, "score_threshold": 0.2}
+        )
+        # Implement BM25 dense retriever here. Needs pickle to avoid re-indexing
+        #dense = ...
+
+        # Use EnsembleRetreiver here to enable hybrid search
+        compressor = LMStudioQwenReranker(client=lm_studio_client, top_n=5)
+        self.retriever = ContextualCompressionRetriever(
+            base_compressor=compressor,
+            base_retriever=sparse   # Change to hybrid search retriever later
         )
 
     def _init_client(self):
         return ChromadbHttpClient(host="localhost", port=8000)
 
     def _get_collection(self, name):
-        #return self.client.get_or_create_collection(name=name)
+        # Register the LM Studio-hosted Qwen embedding model
+        lm_embed_func = OpenAIEmbeddings(
+            openai_api_key="lm-studio",    # LM Studio ignores this
+            model="qwen3-embedding",
+            openai_api_base="http://host.docker.internal:1234/v1",
+            check_embedding_ctx_length=False    # Prevents local tiktoken validation errors
+        )
+
         return Chroma(
             collection_name=name,
-            #embedding_fuction=CUSTOM_EMBEDDING_FUNC
+            embedding_function=lm_embed_func,
             host="localhost",
             port=8000
         )
 
     def _get_splitter(self, type):
         if type == Splitter.RECURSIVE:
-            return RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=0)
+            return RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=20)
         else:
             return None
 
@@ -60,23 +82,29 @@ class VectorInterface():
         path = Path(dirname)
         docs_chunks = []
         chunk_ids = []
+        metadata = []
         for file_path in path.iterdir():
             if file_path.is_file():
                 with open(file_path, "r", encoding="utf-8") as file:
                     chunks = self._chunk_doc(file.read(), split_type)
                     for i, chunk in enumerate(chunks):
                         docs_chunks.append(chunk)
-                        chunk_ids.append(str(file_path.name) + str(i))
+                        chunk_ids.append(str(file_path.name) + "." + str(i))
+                        metadata.append({
+                            "source_path": str(file_path),
+                            "chunk_index": i
+                        })
 
-        return (docs_chunks, chunk_ids)
+        return (docs_chunks, chunk_ids, metadata)
 
     def add_docs(self, dirname):
         # Perform document chunking
-        (chunks, ids) = self._chunk_docs(dirname, Splitter.RECURSIVE)
+        (chunks, ids, meta) = self._chunk_docs(dirname, Splitter.RECURSIVE)
 
         self.collection.add_texts(
             ids=ids, # NOTE: Consider either changing ID method or using defaults
-            documents=chunks
+            texts=chunks,
+            metadatas=meta
         )
 
         return len(chunks)
@@ -88,6 +116,7 @@ class VectorInterface():
 
         return results
 
+    '''
     def query(self, user_query):
         # Get results from querying the chunked data in chromadb
         results = self._retrieve(user_query)["documents"][0]  # list of chunk texts
@@ -128,10 +157,24 @@ class VectorInterface():
             "answer": response.choices[0].message.content,
             "sources": results,
         }
+    '''
 
     def query_stream(self, user_query):
         """Stream response chunks from the LLM as Server-Sent Events."""
-        results = self._retrieve(user_query, k=10)["documents"][0]  # list of chunk texts
+        #results = self._retrieve(user_query, k=10)["documents"][0]  # list of chunk texts
+        # Retrieve relevant chunks, rerank results and reduce down to the top 5
+        response = self._retrieve(user_query) # list of Document objects
+
+        # Extract the page content from the Document objects in response
+        # NOTE: Document objects have more information that may be needed in the future: review
+        results = []
+        sources = []
+        for doc in response:
+            results.append(doc.page_content)
+            sources.append({
+                "file": doc.metadata["source_path"],
+                "text": doc.page_content
+            })
         
         system_prompt = (
             "You are an insightful research assistant analyzing the user's personal writings. "
@@ -152,7 +195,7 @@ class VectorInterface():
          """
 
         response = lm_studio_client.chat.completions.create(
-            model="local-model",
+            model="qwen/qwen3.5-9b",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -162,15 +205,18 @@ class VectorInterface():
         )
 
         def generate():
-            yield f"data: {{\"event\": \"started\", \"message\": \"Analyzing your writings...\", \"sources\": {json.dumps(results)}}}\n\n"
+            yield f"data: {{\"event\": \"started\", \"message\": \"Analyzing your writings...\", \"sources\": {json.dumps(sources)}}}\n\n"
             
-            for chunk in response:
-                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    content = chunk.choices[0].delta.content.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-                    yield f"data: {{\"event\": \"chunk\", \"message\": \"{content}\"}}\n\n"
-                elif chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.reasoning_content:
-                    reasoning_content = chunk.choices[0].delta.reasoning_content.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-                    yield f"data: {{\"event\": \"reasoning\", \"message\": \"{reasoning_content}\"}}\n\n"
+            try:
+                for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+                        yield f"data: {{\"event\": \"chunk\", \"message\": \"{content}\"}}\n\n"
+                    elif chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.reasoning_content:
+                        reasoning_content = chunk.choices[0].delta.reasoning_content.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+                        yield f"data: {{\"event\": \"reasoning\", \"message\": \"{reasoning_content}\"}}\n\n"
+            except Exception as e:
+                print(f"Error in stream: {e}")
             
             yield "data: {\"event\": \"completed\", \"message\": \"Analysis complete.\"}\n\n"
 
