@@ -63,7 +63,7 @@ class VectorInterface():
 
     def _get_splitter(self, type):
         if type == Splitter.RECURSIVE:
-            return RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=0)
+            return RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=20)
         else:
             return None
 
@@ -88,7 +88,7 @@ class VectorInterface():
                     chunks = self._chunk_doc(file.read(), split_type)
                     for i, chunk in enumerate(chunks):
                         docs_chunks.append(chunk)
-                        chunk_ids.append(str(file_path.name) + str(i))
+                        chunk_ids.append(str(file_path.name) + "." + str(i))
 
         return (docs_chunks, chunk_ids)
 
