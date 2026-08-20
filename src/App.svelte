@@ -245,7 +245,7 @@
               {#each entry.sources as source, i}
                 <article class="card" style="--tilt: {(i % 2 === 0 ? 1 : -1) * (1 + (i % 3))}deg">
                   <span class="card-number">{i + 1}</span>
-                  <p class="card-text">{source.id}</p>
+                  <p class="card-text">{source.file}</p>
                   <p class="card-text">{source.text}</p>
                 </article>
               {/each}

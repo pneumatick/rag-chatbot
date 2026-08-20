@@ -82,6 +82,7 @@ class VectorInterface():
         path = Path(dirname)
         docs_chunks = []
         chunk_ids = []
+        metadata = []
         for file_path in path.iterdir():
             if file_path.is_file():
                 with open(file_path, "r", encoding="utf-8") as file:
@@ -89,16 +90,21 @@ class VectorInterface():
                     for i, chunk in enumerate(chunks):
                         docs_chunks.append(chunk)
                         chunk_ids.append(str(file_path.name) + "." + str(i))
+                        metadata.append({
+                            "source_path": str(file_path),
+                            "chunk_index": i
+                        })
 
-        return (docs_chunks, chunk_ids)
+        return (docs_chunks, chunk_ids, metadata)
 
     def add_docs(self, dirname):
         # Perform document chunking
-        (chunks, ids) = self._chunk_docs(dirname, Splitter.RECURSIVE)
+        (chunks, ids, meta) = self._chunk_docs(dirname, Splitter.RECURSIVE)
 
         self.collection.add_texts(
             ids=ids, # NOTE: Consider either changing ID method or using defaults
-            texts=chunks
+            texts=chunks,
+            metadatas=meta
         )
 
         return len(chunks)
@@ -166,7 +172,7 @@ class VectorInterface():
         for doc in response:
             results.append(doc.page_content)
             sources.append({
-                "id": doc.id,
+                "file": doc.metadata["source_path"],
                 "text": doc.page_content
             })
         
