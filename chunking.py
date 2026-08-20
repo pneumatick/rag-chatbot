@@ -109,6 +109,14 @@ class VectorInterface():
 
         return len(chunks)
 
+    def _get_doc(self, path):
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                return file.read()
+        except FileNotFoundError:
+            print(f"Error when retrieving source document: File not found for {path}")
+            return None
+
     def _retrieve(self, query, k=5):
         results = self.retriever.invoke(
             input=query
@@ -161,20 +169,25 @@ class VectorInterface():
 
     def query_stream(self, user_query):
         """Stream response chunks from the LLM as Server-Sent Events."""
-        #results = self._retrieve(user_query, k=10)["documents"][0]  # list of chunk texts
         # Retrieve relevant chunks, rerank results and reduce down to the top 5
         response = self._retrieve(user_query) # list of Document objects
 
         # Extract the page content from the Document objects in response
         # NOTE: Document objects have more information that may be needed in the future: review
-        results = []
         sources = []
+        docs = {}
         for doc in response:
-            results.append(doc.page_content)
+            path = doc.metadata["source_path"]
+            # Create list of chunks and their respective file paths
             sources.append({
-                "file": doc.metadata["source_path"],
+                "file": path,
                 "text": doc.page_content
             })
+
+            # Get the text from the original file
+            if source_text := self._get_doc(path):
+                file_name = path.split("/")[-1]
+                docs[file_name] = source_text
         
         system_prompt = (
             "You are an insightful research assistant analyzing the user's personal writings. "
@@ -182,13 +195,19 @@ class VectorInterface():
             "between the concepts requested. Do not invent facts; rely strictly on the text provided."
         )
 
+        # Format documents to clearly denote each separately
+        doc_blocks = [
+            f'<document name="{name}">\n{text}\n</document>'
+            for name, text in docs.items()
+        ]
+
         user_prompt = f"""
             Based on the following excerpts from my writings, answer this question:
             "{user_query}"
 
             ---
-            WRITING EXCERPTS:
-            {"---\n".join(results)}
+            FULL TEXTS:
+            {"\n\n".join(doc_blocks)}
             ---
 
             Provide a structured analysis highlighting the primary intersections, tensions, or patterns you see.
