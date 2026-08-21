@@ -237,7 +237,10 @@
           {/if}
         </div>
         <div class="answer">
-          <SvelteMarkdown source={entry.answer} streaming={true} />
+        <!-- Use #key to refresh the component once the stream closes to fix formatting issues -->
+          {#key loading}
+            <SvelteMarkdown source={entry.answer} streaming={true} />
+          {/key}
         </div>
         {#if entry.sources.length > 0}
           <div class="sources">
