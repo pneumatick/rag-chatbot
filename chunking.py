@@ -11,6 +11,7 @@ from flask import Response
 
 from reranker import LMStudioQwenReranker
 
+
 lm_studio_client = OpenAI(
     base_url="http://host.docker.internal:1234/v1",
     api_key="lm-studio"  # required by the client, but LM Studio ignores it"
@@ -19,12 +20,25 @@ lm_studio_client = OpenAI(
 
 @unique
 class Splitter(Enum):
+    """Enum for text splitter selection."""
     RECURSIVE = auto()
 
 
 class VectorInterface():
+    """Encapsulate the program's core functionality.
+
+    This class handles everything related to document chunking, 
+    embedding, vector database insertion and retrieval, querying LLMs 
+    and relaying their answers to the front-end.
+
+    Attributes:
+        collection (Chroma): LangChain's Chroma HTTP vector store 
+            interface for the given collection.
+        retriever (ContextualCompressionRetriever): Vector store 
+            retriever.
+    """
     def __init__(self, client=None):
-        self.client = client if client else self._init_client()
+        #self.client = client if client else self._init_client()
         self.collection = self._get_collection("user-docs-collection") # NOTE: Rename from collection to something describing VectorStore
 
         # Set up retriever(s) for hybrid search
@@ -43,9 +57,11 @@ class VectorInterface():
         )
 
     def _init_client(self):
+        """Initialize the Chromadb client (redundant? Check _get_collection()...)"""
         return ChromadbHttpClient(host="localhost", port=8000)
 
     def _get_collection(self, name):
+        """Initialize the Chroma client with the given collection."""
         # Register the LM Studio-hosted Qwen embedding model
         lm_embed_func = OpenAIEmbeddings(
             openai_api_key="lm-studio",    # LM Studio ignores this
@@ -62,12 +78,14 @@ class VectorInterface():
         )
 
     def _get_splitter(self, type):
+        """Get the text splitter to be used for document chunking."""
         if type == Splitter.RECURSIVE:
             return RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=20)
         else:
             return None
 
     def _chunk_doc(self, document, split_type):
+        """Return chunks from the given document."""
         splitter = self._get_splitter(split_type)
 
         # NOTE: Handle error properly
@@ -79,6 +97,7 @@ class VectorInterface():
         return chunks
 
     def _chunk_docs(self, dirname, split_type):
+        """Return chunks from all documents in the specified file path."""
         path = Path(dirname)
         docs_chunks = []
         chunk_ids = []
@@ -98,6 +117,7 @@ class VectorInterface():
         return (docs_chunks, chunk_ids, metadata)
 
     def add_docs(self, dirname):
+        """Add the documents in the given directory to the vector store."""
         # Perform document chunking
         (chunks, ids, meta) = self._chunk_docs(dirname, Splitter.RECURSIVE)
 
@@ -110,6 +130,7 @@ class VectorInterface():
         return len(chunks)
 
     def _get_doc(self, path):
+        """Get the specified document text. Used as context for LLM."""
         try:
             with open(path, "r", encoding="utf-8") as file:
                 return file.read()
@@ -117,7 +138,10 @@ class VectorInterface():
             print(f"Error when retrieving source document: File not found for {path}")
             return None
 
-    def _retrieve(self, query, k=5):
+    def _retrieve(self, query):
+        """Retrieve chunks from the vector store that are semantically 
+        similar to the query.
+        """
         results = self.retriever.invoke(
             input=query
         )
