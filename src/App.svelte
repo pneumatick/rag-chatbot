@@ -53,6 +53,7 @@
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        loading = false;
         throw new Error(errData.error || `HTTP ${res.status}: ${res.statusText}`);
       }
       console.log("Response received: ", res)
@@ -236,7 +237,10 @@
           {/if}
         </div>
         <div class="answer">
-          <SvelteMarkdown source={entry.answer} streaming={true} />
+        <!-- Use #key to refresh the component once the stream closes to fix formatting issues -->
+          {#key loading}
+            <SvelteMarkdown source={entry.answer} streaming={true} />
+          {/key}
         </div>
         {#if entry.sources.length > 0}
           <div class="sources">

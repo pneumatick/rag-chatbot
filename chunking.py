@@ -11,6 +11,7 @@ from flask import Response
 
 from reranker import LMStudioQwenReranker
 
+
 lm_studio_client = OpenAI(
     base_url="http://host.docker.internal:1234/v1",
     api_key="lm-studio"  # required by the client, but LM Studio ignores it"
@@ -19,12 +20,25 @@ lm_studio_client = OpenAI(
 
 @unique
 class Splitter(Enum):
+    """Enum for text splitter selection."""
     RECURSIVE = auto()
 
 
 class VectorInterface():
+    """Encapsulate the program's core functionality.
+
+    This class handles everything related to document chunking, 
+    embedding, vector database insertion and retrieval, querying LLMs 
+    and relaying their answers to the front-end.
+
+    Attributes:
+        collection (Chroma): LangChain's Chroma HTTP vector store 
+            interface for the given collection.
+        retriever (ContextualCompressionRetriever): Vector store 
+            retriever.
+    """
     def __init__(self, client=None):
-        self.client = client if client else self._init_client()
+        #self.client = client if client else self._init_client()
         self.collection = self._get_collection("user-docs-collection") # NOTE: Rename from collection to something describing VectorStore
 
         # Set up retriever(s) for hybrid search
@@ -43,9 +57,11 @@ class VectorInterface():
         )
 
     def _init_client(self):
+        """Initialize the Chromadb client (redundant? Check _get_collection()...)"""
         return ChromadbHttpClient(host="localhost", port=8000)
 
     def _get_collection(self, name):
+        """Initialize the Chroma client with the given collection."""
         # Register the LM Studio-hosted Qwen embedding model
         lm_embed_func = OpenAIEmbeddings(
             openai_api_key="lm-studio",    # LM Studio ignores this
@@ -62,12 +78,14 @@ class VectorInterface():
         )
 
     def _get_splitter(self, type):
+        """Get the text splitter to be used for document chunking."""
         if type == Splitter.RECURSIVE:
             return RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=20)
         else:
             return None
 
     def _chunk_doc(self, document, split_type):
+        """Return chunks from the given document."""
         splitter = self._get_splitter(split_type)
 
         # NOTE: Handle error properly
@@ -79,6 +97,7 @@ class VectorInterface():
         return chunks
 
     def _chunk_docs(self, dirname, split_type):
+        """Return chunks from all documents in the specified file path."""
         path = Path(dirname)
         docs_chunks = []
         chunk_ids = []
@@ -98,6 +117,7 @@ class VectorInterface():
         return (docs_chunks, chunk_ids, metadata)
 
     def add_docs(self, dirname):
+        """Add the documents in the given directory to the vector store."""
         # Perform document chunking
         (chunks, ids, meta) = self._chunk_docs(dirname, Splitter.RECURSIVE)
 
@@ -109,7 +129,19 @@ class VectorInterface():
 
         return len(chunks)
 
-    def _retrieve(self, query, k=5):
+    def _get_doc(self, path):
+        """Get the specified document text. Used as context for LLM."""
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                return file.read()
+        except FileNotFoundError:
+            print(f"Error when retrieving source document: File not found for {path}")
+            return None
+
+    def _retrieve(self, query):
+        """Retrieve chunks from the vector store that are semantically 
+        similar to the query.
+        """
         results = self.retriever.invoke(
             input=query
         )
@@ -161,20 +193,25 @@ class VectorInterface():
 
     def query_stream(self, user_query):
         """Stream response chunks from the LLM as Server-Sent Events."""
-        #results = self._retrieve(user_query, k=10)["documents"][0]  # list of chunk texts
         # Retrieve relevant chunks, rerank results and reduce down to the top 5
         response = self._retrieve(user_query) # list of Document objects
 
         # Extract the page content from the Document objects in response
         # NOTE: Document objects have more information that may be needed in the future: review
-        results = []
         sources = []
+        docs = {}
         for doc in response:
-            results.append(doc.page_content)
+            path = doc.metadata["source_path"]
+            # Create list of chunks and their respective file paths
             sources.append({
-                "file": doc.metadata["source_path"],
+                "file": path,
                 "text": doc.page_content
             })
+
+            # Get the text from the original file
+            if source_text := self._get_doc(path):
+                file_name = path.split("/")[-1]
+                docs[file_name] = source_text
         
         system_prompt = (
             "You are an insightful research assistant analyzing the user's personal writings. "
@@ -182,13 +219,19 @@ class VectorInterface():
             "between the concepts requested. Do not invent facts; rely strictly on the text provided."
         )
 
+        # Format documents to clearly denote each separately
+        doc_blocks = [
+            f'<document name="{name}">\n{text}\n</document>'
+            for name, text in docs.items()
+        ]
+
         user_prompt = f"""
             Based on the following excerpts from my writings, answer this question:
             "{user_query}"
 
             ---
-            WRITING EXCERPTS:
-            {"---\n".join(results)}
+            FULL TEXTS:
+            {"\n\n".join(doc_blocks)}
             ---
 
             Provide a structured analysis highlighting the primary intersections, tensions, or patterns you see.
