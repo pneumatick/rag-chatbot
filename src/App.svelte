@@ -53,6 +53,7 @@
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        loading = false;
         throw new Error(errData.error || `HTTP ${res.status}: ${res.statusText}`);
       }
       console.log("Response received: ", res)
